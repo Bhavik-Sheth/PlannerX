@@ -42,6 +42,15 @@ class PlannerApp(App):
         self.current_selected_file = None
         self.chat_history = []
 
+    def get_selected_relative_path(self) -> str:
+        """Return the selected file path relative to the planner directory."""
+        if not self.current_selected_file:
+            return ""
+        try:
+            return str(self.current_selected_file.relative_to(self.planner_path))
+        except ValueError:
+            return self.current_selected_file.name
+
     def compose(self) -> ComposeResult:
         # Determine the directory path to display.
         # If the planner_path doesn't exist, show current directory as fallback.
@@ -332,9 +341,8 @@ class PlannerApp(App):
         """Mark a documentation file as approved in Tracker.md."""
         filename = file_arg.strip()
         if not filename:
-            if self.current_selected_file:
-                filename = self.current_selected_file.name
-            else:
+            filename = self.get_selected_relative_path()
+            if not filename:
                 self.query_one("#viewer-panel").write_output("[red]Please specify a file to approve, e.g. `/approve PRD.md`[/red]")
                 return
 
@@ -371,9 +379,8 @@ class PlannerApp(App):
         """Clear a planning file and re-run its agent after confirmation."""
         filename = file_arg.strip()
         if not filename:
-            if self.current_selected_file:
-                filename = self.current_selected_file.name
-            else:
+            filename = self.get_selected_relative_path()
+            if not filename:
                 self.query_one("#viewer-panel").write_output("[red]Please specify a file to reset, e.g. `/reset PRD.md`[/red]")
                 return
 
@@ -405,14 +412,21 @@ class PlannerApp(App):
                 "ImplementationPlan.md": "implementation",
                 "Tracker.md":         "tracker",
             }
-            agent_name = _AGENT_MAP.get(filename)
+            agent_name = None
+            if filename.startswith("MODULES/"):
+                agent_name = "modules"
+            elif filename.startswith("ARCHITECTURE_DIAGRAMS/"):
+                agent_name = "diagram"
+            else:
+                agent_name = _AGENT_MAP.get(filename)
+
             if not agent_name:
                 print(f"No agent associated with {filename}. File cleared.")
                 return
 
             print(f"⏳ Re-running {agent_name} agent...")
             from planner.main import _run_single_agent
-            _run_single_agent(str(self.planner_path), agent_name)
+            _run_single_agent(str(self.planner_path), agent_name, filename)
             print(f"✅ {filename} regenerated.")
 
             # Refresh viewer if this file was select-focused
@@ -564,6 +578,18 @@ class PlannerApp(App):
             if subarg1 not in providers:
                 viewer.write_output(f"[red]Unknown provider '{subarg1}'. Must be one of: {', '.join(providers)}[/red]")
                 return
+
+            # Pre-flight package check
+            from planner.llm import PROVIDER_REGISTRY
+            import importlib
+            entry = PROVIDER_REGISTRY[subarg1]
+            try:
+                importlib.import_module(entry["import_path"])
+            except ImportError:
+                package_name = entry["import_path"].replace('_', '-')
+                viewer.write_output(f"[yellow]⚠️ Warning: Provider '{subarg1}' requires the '{entry['import_path']}' package.[/yellow]")
+                viewer.write_output(f"[yellow]Run: [bold]uv add {package_name}[/bold] in your terminal to install it.[/yellow]")
+
             set_active_provider(subarg1)
             viewer.write_output(f"[green]✅ Active provider set to: {subarg1}[/green]")
 
@@ -606,8 +632,11 @@ class PlannerApp(App):
                 modules_dir = self.planner_path / "MODULES"
                 if modules_dir.exists():
                     existing.extend([f"MODULES/{f.name}" for f in modules_dir.glob("*.md")])
+                diagrams_dir = self.planner_path / "ARCHITECTURE_DIAGRAMS"
+                if diagrams_dir.exists():
+                    existing.extend([f"ARCHITECTURE_DIAGRAMS/{f.name}" for f in diagrams_dir.glob("*.md")])
             
-            active_file = self.current_selected_file.name if self.current_selected_file else ""
+            active_file = self.get_selected_relative_path()
 
             # 2. Invoke conversational brain
             print("⏳ Chat Orchestrator is thinking...")
@@ -872,29 +901,46 @@ class PlannerApp(App):
                     "ImplementationPlan.md": "implementation",
                     "Tracker.md":         "tracker",
                 }
-                agent_name = _AGENT_MAP.get(target)
+                agent_name = None
+                if target.startswith("MODULES/"):
+                    agent_name = "modules"
+                elif target.startswith("ARCHITECTURE_DIAGRAMS/"):
+                    agent_name = "diagram"
+                else:
+                    agent_name = _AGENT_MAP.get(target)
+
                 if not agent_name:
                     print(f"No agent associated with {target}. Feedback cannot be processed.")
                     return
 
-                agents = {
-                    "structuring": "planner.agents.structuring_agent.structuring_agent",
-                    "prd":         "planner.agents.prd_agent.prd_agent",
-                    "trd":         "planner.agents.trd_agent.trd_agent",
-                    "schema":      "planner.agents.schema_agent.schema_agent",
-                    "design":      "planner.agents.design_agent.design_agent",
-                    "appflow":     "planner.agents.appflow_agent.appflow_agent",
-                    "rules":       "planner.agents.rules_agent.rules_agent",
-                    "implementation": "planner.agents.implementation_agent.implementation_agent",
-                    "tracker":     "planner.agents.tracker_agent.tracker_agent",
-                }
-                dotted = agents[agent_name]
-                module_path, fn_name = dotted.rsplit(".", 1)
-                module_obj = importlib.import_module(module_path)
-                fn = getattr(module_obj, fn_name)
+                if agent_name == "diagram":
+                    from planner.agents.architecture_diagram_agent import generate_diagrams
+                    generate_diagrams(str(self.planner_path))
+                    print(f"✅ {target} updated with your changes.")
+                else:
+                    if agent_name == "modules":
+                        module_name = target.split("/")[-1].replace(".md", "")
+                        state.context_files["__module_name__"] = module_name
 
-                fn(state)
-                print(f"✅ {target} updated with your changes.")
+                    agents = {
+                        "structuring": "planner.agents.structuring_agent.structuring_agent",
+                        "prd":         "planner.agents.prd_agent.prd_agent",
+                        "trd":         "planner.agents.trd_agent.trd_agent",
+                        "schema":      "planner.agents.schema_agent.schema_agent",
+                        "design":      "planner.agents.design_agent.design_agent",
+                        "appflow":     "planner.agents.appflow_agent.appflow_agent",
+                        "rules":       "planner.agents.rules_agent.rules_agent",
+                        "implementation": "planner.agents.implementation_agent.implementation_agent",
+                        "tracker":     "planner.agents.tracker_agent.tracker_agent",
+                        "modules":     "planner.agents.module_planner_agent.module_planner_agent",
+                    }
+                    dotted = agents[agent_name]
+                    module_path, fn_name = dotted.rsplit(".", 1)
+                    module_obj = importlib.import_module(module_path)
+                    fn = getattr(module_obj, fn_name)
+
+                    fn(state)
+                    print(f"✅ {target} updated with your changes.")
 
                 def reload_view():
                     if self.current_selected_file:

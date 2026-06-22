@@ -42,8 +42,8 @@ class ArchitecturePanel(Static):
         """
         candidates = (
             [path] if path else [
-                self.planner_path / "ARCHITECTURE_DIAGRAMS" / "SystemArchitecture.mmd",
-                self.planner_path / "ARCHITECTURE_DIAGRAMS" / "SystemDesign.mmd",
+                self.planner_path / "ARCHITECTURE_DIAGRAMS" / "SystemArchitecture.md",
+                self.planner_path / "ARCHITECTURE_DIAGRAMS" / "SystemDesign.md",
             ]
         )
 
@@ -51,8 +51,8 @@ class ArchitecturePanel(Static):
             if candidate and candidate.exists():
                 content = candidate.read_text(encoding="utf-8").strip()
                 if content:
-                    from planner.utils.mermaid_render import render_mermaid_text
-                    self.update(render_mermaid_text(content))
+                    from rich.markdown import Markdown
+                    self.update(Markdown(content))
                     return
 
         self.update(_PLACEHOLDER)

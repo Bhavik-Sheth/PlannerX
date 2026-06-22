@@ -17,8 +17,8 @@ PLANNER_FILES = [
 ]
 
 DIAGRAM_FILES = [
-    "SystemDesign.mmd",
-    "SystemArchitecture.mmd",
+    "SystemDesign.md",
+    "SystemArchitecture.md",
     "FolderStructure.md",
     "DataFlow.md",
 ]

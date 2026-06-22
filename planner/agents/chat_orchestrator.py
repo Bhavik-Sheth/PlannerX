@@ -52,8 +52,9 @@ class ChatAction(BaseModel):
     )
 
 
-CHAT_SYSTEM_PROMPT = """You are the central conversational Orchestrator for PlannerX, an AI-driven project planner.
-Your goal is to converse with the user, understand their intentions, and help them plan their software project.
+CHAT_SYSTEM_PROMPT = """You are the central conversational Orchestrator (Master Agent) for PlannerX, an AI-driven project planner.
+Your goal is to converse with the user, understand their intentions, direct the planning pipeline, and help them plan their software project. 
+When planning is completed and finalize is invoked, you compile the final execution context (CLAUDE.md), which strictly binds subsequent coding agents to the documents, schemas, and directories under the PLANNER/ folder.
 
 You have access to the project planning files under the PLANNER/ directory. 
 The planning files and execution sequence are:

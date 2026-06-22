@@ -4,16 +4,13 @@ Given a question from the Griller, uses LLM + project context to suggest the bes
 Presents the suggestion to the user for approval, then fills grill_answers and routes back to Griller.
 
 Reads: Constraints.md, StructuredIdea.md, pending question from tech_suggestions state
-Writes: appends suggestion to DesignDecisions.md (logged)
+Writes: Updates state grill_answers with accepted recommendations.
 """
 import sys
-from datetime import date
 from pathlib import Path
 from langchain_core.messages import SystemMessage, HumanMessage
 from planner.state import PlannerState
 from planner.agents._base import load_context, invoke_llm_safe, strip_markdown_fence
-from planner.files.writer import write_planner_file
-from planner.files.reader import read_planner_file
 
 SYSTEM_PROMPT = """You are a world-class technology consultant who gives concise, specific, 
 justified technology recommendations.
@@ -66,8 +63,6 @@ def tech_stack_agent(state: PlannerState) -> PlannerState:
     if choice == "y":
         # Store the accepted suggestion as the answer
         state.grill_answers[question] = suggestion
-        # Log to DesignDecisions.md
-        _log_to_design_decisions(state, question, suggestion)
         # Remove the current question from pending_questions
         if question in state.pending_questions:
             state.pending_questions.remove(question)
@@ -88,19 +83,3 @@ def tech_stack_agent(state: PlannerState) -> PlannerState:
     # Route back to griller to handle any remaining questions
     state.next_agent = "griller"
     return state
-
-
-def _log_to_design_decisions(state: PlannerState, question: str, suggestion: str) -> None:
-    """Append the accepted suggestion to DesignDecisions.md."""
-    planner_dir = Path(state.project_path)
-    dd_path = planner_dir / "DesignDecisions.md"
-    today = date.today().isoformat()
-    entry = f"\n\n---\n**Date**: {today}\n**Question**: {question}\n\n{suggestion}\n"
-    try:
-        if dd_path.exists():
-            existing = read_planner_file(dd_path, use_cache=False)
-            write_planner_file(dd_path, existing + entry, force=True)
-        else:
-            write_planner_file(dd_path, f"# Design Decisions\n{entry}", force=True)
-    except Exception:
-        pass  # Best-effort logging — don't crash the run

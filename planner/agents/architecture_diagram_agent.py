@@ -12,21 +12,21 @@ You must output exactly four sections, separated by headers on their own lines:
 - ---DATA_FLOW---
 
 Specifications for each section:
-1. **SystemDesign.mmd**: A Mermaid sequence diagram, class diagram, or state diagram showing the core design patterns or system interactions. Do NOT wrap it in ```mermaid code block backticks. Start writing the Mermaid syntax directly.
-2. **SystemArchitecture.mmd**: A Mermaid flowchart showing the high-level system architecture, components, and their connections. Do NOT wrap it in ```mermaid code block backticks. Start writing the Mermaid syntax directly.
-3. **FolderStructure.md**: A Markdown document showing the proposed/actual project folder structure with clear descriptions for each directory/file. Do NOT wrap it in ```markdown code block backticks.
-4. **DataFlow.md**: A Markdown document detailing how data flows through the system, including a Mermaid flowchart of key data flows. Do NOT wrap it in ```markdown code block backticks.
+1. **SystemDesign.md**: A Markdown document showing the core design patterns or system interactions using a HORIZONTAL ASCII diagram inside a markdown code block. Include a brief explanation below the diagram. Do NOT wrap the entire section in code fences, only the ASCII diagram itself.
+2. **SystemArchitecture.md**: A Markdown document showing the high-level system architecture, components, and their connections using a HORIZONTAL ASCII diagram inside a markdown code block. Include a brief explanation below the diagram. Do NOT wrap the entire section in code fences, only the ASCII diagram itself.
+3. **FolderStructure.md**: A Markdown document showing the proposed/actual project folder structure with clear descriptions for each directory/file. Do NOT wrap the entire section in code fences.
+4. **DataFlow.md**: A Markdown document detailing how data flows through the system, including a HORIZONTAL ASCII diagram of key data flows inside a markdown code block. Include a brief explanation below the diagram. Do NOT wrap the entire section in code fences, only the ASCII diagram itself.
 
 Rules:
-- Make sure all Mermaid diagrams are syntactically valid and start with the appropriate diagram type keyword (e.g. `graph TD`, `flowchart TD`, `sequenceDiagram`, `classDiagram`).
-- Write high-quality, professional architectures. If any input files are empty, make reasonable assumptions based on the parts that are filled.
+- All ASCII diagrams must be horizontal, using arrows (e.g., `-->` or `==>`) and text boxes (e.g., `[Component]`) to clearly represent structures and flows.
+- Make sure all ASCII diagrams are clean and fit within a standard terminal width (80-100 characters).
 - Do NOT output any conversational text or wrapping markdown code fences outside the sections. Output the headers exactly as specified (e.g. `---SYSTEM_DESIGN---`) on their own lines.
 """
 
 def parse_diagram_output(text: str) -> dict[str, str]:
     sections = {
-        "SystemDesign.mmd": "",
-        "SystemArchitecture.mmd": "",
+        "SystemDesign.md": "",
+        "SystemArchitecture.md": "",
         "FolderStructure.md": "",
         "DataFlow.md": "",
     }
@@ -40,12 +40,12 @@ def parse_diagram_output(text: str) -> dict[str, str]:
         if stripped == "---SYSTEM_DESIGN---":
             if current_key and section_content:
                 sections[current_key] = "\n".join(section_content).strip()
-            current_key = "SystemDesign.mmd"
+            current_key = "SystemDesign.md"
             section_content = []
         elif stripped == "---SYSTEM_ARCHITECTURE---":
             if current_key and section_content:
                 sections[current_key] = "\n".join(section_content).strip()
-            current_key = "SystemArchitecture.mmd"
+            current_key = "SystemArchitecture.md"
             section_content = []
         elif stripped == "---FOLDER_STRUCTURE---":
             if current_key and section_content:

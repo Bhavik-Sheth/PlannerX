@@ -1,7 +1,7 @@
 /* planner/tui/planner.css */
 
 Screen {
-    background: #0d1117;
+    background: #000000;
 }
 
 Horizontal {
@@ -14,7 +14,7 @@ Horizontal {
     height: 100%;
     border: solid #2f81f7;
     border-title-align: left;
-    background: #0d1117;
+    background: #000000;
     color: #c9d1d9;
 }
 
@@ -31,7 +31,7 @@ Horizontal {
     height: 8;
     border: solid #3fb950;
     border-title-align: left;
-    background: #0d1117;
+    background: #000000;
     color: #c9d1d9;
 }
 
@@ -43,7 +43,7 @@ Horizontal {
     height: 1fr;
     border: solid #c9d1d9;
     border-title-align: left;
-    background: #0d1117;
+    background: #000000;
     color: #c9d1d9;
 }
 
@@ -55,7 +55,7 @@ Horizontal {
     height: 3;
     border: solid #f0883e;
     border-title-align: left;
-    background: #0d1117;
+    background: #000000;
     color: #c9d1d9;
 }
 
