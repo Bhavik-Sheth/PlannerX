@@ -1,5 +1,19 @@
 from pydantic import BaseModel, Field
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, TypedDict
+
+
+class ExecutiveState(TypedDict):
+    """
+    Minimal state held by the ExecutiveAgent — just enough to know
+    what it's waiting for.  All session / planning state lives in
+    PlannerState (owned by the Orchestrator).
+    """
+    waiting_for: str        # "mode_select" | "resume_confirm" | "approval" |
+                            # "question_answer" | "suggestion_confirm" |
+                            # "retry_confirm" | "reset_confirm" |
+                            # "fit_analysis_confirm" | ""
+    pending_command: dict   # partially built command awaiting user confirmation
+    last_display: str       # last thing shown to user (for context)
 
 
 class PlannerState(BaseModel):

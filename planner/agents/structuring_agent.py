@@ -1,46 +1,109 @@
 """
-structuring_agent.py — Converts RawIdea.md into a clean StructuredIdea.md.
-Reads: RawIdea.md
-Writes: StructuredIdea.md
+structuring_agent.py — Converts raw idea input into a clean StructuredIdea.md.
+
+Handles both planning modes:
+  - from_scratch: raw idea → structured problem statement
+  - ps_idea_hybrid: PS + solution → structured idea with Fit Analysis
+
+Called by the Orchestrator after user finishes describing their idea.
+The Orchestrator writes the file — this agent only generates content.
 """
+import re
 from langchain_core.messages import SystemMessage, HumanMessage
 from planner.state import PlannerState
-from planner.agents._base import load_context, invoke_llm_safe, strip_markdown_fence, write_agent_file
+from planner.agents._base import (
+    load_context,
+    invoke_llm_safe,
+    strip_markdown_fence,
+    write_agent_file,
+)
 
-SYSTEM_PROMPT = """You are an expert product strategist. Your job is to take a raw, unstructured idea 
-description and produce a clean, well-structured problem statement in Markdown.
 
-The output MUST include:
-1. **App Name / Working Title** (infer from context if not stated)
-2. **Core Problem**: The specific pain point this app solves.
-3. **Proposed Solution**: What the app does at a high level.
-4. **Key Capabilities**: Bullet list of 5-10 concrete capabilities.
-5. **Platform & Audience**: Who will use it and on what platform (web, mobile, CLI, desktop, API, etc.).
-6. **Technology Preferences** (if mentioned by the user, otherwise note "Not specified").
-7. **Constraints** (budget, timeline, team size — anything mentioned by user).
+# ── From-Scratch mode prompt ──────────────────────────────────────────────
+
+FROM_SCRATCH_PROMPT = """You are an expert product strategist.
+Read the raw idea below and produce a clean, detailed, well-structured problem statement in Markdown.
+
+The output MUST contain:
+## Problem Statement
+[Specific pain. Who has it. Why current solutions fail.]
+
+## Proposed Solution
+[What this project builds. How it addresses the problem at a high level.]
+
+## Key Goals
+[3–5 concrete goals, not vague aspirations.]
+
+## Non-Goals
+[What this project explicitly will not do.]
+
+## Target Users
+[Specific user personas. Not "developers" — name the role and context.]
 
 Rules:
-- Write clean Markdown. Do NOT wrap the entire output in code fences.
-- Be faithful to the user's words — do not invent features they didn't describe.
+- Write clean Markdown. Do NOT wrap the entire output in code fences (e.g. do not output ```markdown ... ```).
+- Be faithful to the raw idea — do not invent features they didn't describe.
 - If something is ambiguous, represent it as-is rather than guessing.
 """
 
 
+# ── Hybrid (PS + Idea) mode prompt ────────────────────────────────────────
+
+HYBRID_PROMPT = """You are an expert product strategist and systems architect.
+Read the problem statement and the proposed solution from the raw idea below.
+Produce a structured planning document in Markdown with the following exact headings:
+
+## Problem Statement (Structured)
+[Cleaned, specific version of the PS. Who is affected, what is the pain, why it matters, scope of the problem.]
+
+## Solution Overview
+[Cleaned, specific version of the proposed solution. What it builds, how it solves the PS, what it explicitly does not do.]
+
+## Fit Analysis
+[Analyze if the proposed solution actually solves the stated PS. Identify:
+- Gaps: aspects of the PS the solution doesn't address
+- Assumptions: things the solution assumes that the PS doesn't guarantee
+- Risks: where the solution may fail to solve the problem in edge cases]
+
+## Validated Scope
+[Synthesized final scope: the intersection of what the PS requires and what the solution proposes. This is what the PRD agent will build against.]
+
+Rules:
+- Write clean Markdown. Do NOT wrap the entire output in code fences.
+- Be honest and detailed in the Fit Analysis.
+"""
+
+
 def structuring_agent(state: PlannerState) -> PlannerState:
-    """Convert RawIdea.md → StructuredIdea.md."""
+    """
+    Convert RawIdea.md → StructuredIdea.md content.
+
+    Operates in two modes based on ``state.mode``:
+      • ``from_scratch``   – uses FROM_SCRATCH_PROMPT
+      • ``ps_idea_hybrid`` – uses HYBRID_PROMPT, extracts Fit Analysis
+
+    The Orchestrator writes the resulting file to disk.
+    """
     ctx = load_context(state, "RawIdea.md")
     raw_idea = ctx.get("RawIdea.md", "").strip()
 
     if not raw_idea:
         state.pending_questions = [
-            "RawIdea.md is empty. Please describe your project idea first using `planner describe <text>`."
+            "RawIdea.md is empty. Please describe your project idea first "
+            "using `planner describe <text>`."
         ]
         state.status = "needs_input"
         state.calling_agent = "structuring"
         return state
 
+    # Select prompt based on mode
+    if state.mode == "ps_idea_hybrid":
+        prompt = HYBRID_PROMPT
+    else:
+        prompt = FROM_SCRATCH_PROMPT
+
     messages = [
-        SystemMessage(content=SYSTEM_PROMPT),
+        SystemMessage(content=prompt),
         HumanMessage(content=f"Raw Idea:\n{raw_idea}"),
     ]
 
@@ -50,8 +113,67 @@ def structuring_agent(state: PlannerState) -> PlannerState:
     state.structured_idea = content
     state.current_file = "StructuredIdea.md"
     state.status = "drafting"
-    # Route to orchestrator so it evaluates the sequence naturally.
-    # Do NOT hardcode "prd" here — the orchestrator will detect StructuredIdea.md
-    # is populated and advance to the next unpopulated file in its sequence.
+
+    # Extract fit analysis for hybrid mode
+    if state.mode == "ps_idea_hybrid":
+        fit_match = re.search(
+            r"## Fit Analysis\s*(.*?)(?=\n##|$)",
+            content,
+            re.DOTALL | re.IGNORECASE,
+        )
+        if fit_match:
+            state.fit_analysis = fit_match.group(1).strip()
+        else:
+            state.fit_analysis = "No fit analysis section generated by LLM."
+
+    # Route back to orchestrator — it evaluates the sequence naturally.
     state.next_agent = "orchestrator"
     return state
+
+
+def run_structuring(raw_idea: str, mode: str) -> dict:
+    """
+    Standalone entry point called by the Orchestrator's ``handle_describe``.
+
+    Returns
+    -------
+    dict
+        ``structured_idea`` : str – full StructuredIdea.md content
+        ``fit_analysis``    : str – Fit Analysis section (hybrid) or ""
+        ``has_gaps``        : bool – True if Fit Analysis found gaps (hybrid)
+    """
+    if mode == "ps_idea_hybrid":
+        prompt = HYBRID_PROMPT
+    else:
+        prompt = FROM_SCRATCH_PROMPT
+
+    messages = [
+        SystemMessage(content=prompt),
+        HumanMessage(content=f"Raw Idea:\n{raw_idea}"),
+    ]
+
+    content = strip_markdown_fence(invoke_llm_safe(messages))
+
+    fit_analysis = ""
+    has_gaps = False
+
+    if mode == "ps_idea_hybrid":
+        fit_match = re.search(
+            r"## Fit Analysis\s*(.*?)(?=\n##|$)",
+            content,
+            re.DOTALL | re.IGNORECASE,
+        )
+        if fit_match:
+            fit_analysis = fit_match.group(1).strip()
+            # Detect if gaps/risks/assumptions are mentioned
+            gap_keywords = re.compile(
+                r"\b(gap|risk|assumption|missing|unaddressed|conflict)\b",
+                re.IGNORECASE,
+            )
+            has_gaps = bool(gap_keywords.search(fit_analysis))
+
+    return {
+        "structured_idea": content,
+        "fit_analysis": fit_analysis,
+        "has_gaps": has_gaps,
+    }

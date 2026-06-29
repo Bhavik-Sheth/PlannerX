@@ -2,8 +2,11 @@
 graph.py — Builds the LangGraph StateGraph for the PlannerX orchestration pipeline.
 
 Node registry:
-  orchestrator, structuring, prd, trd, schema, design, appflow,
-  rules, implementation, tracker, modules, griller, tech_stack
+  orchestrator, structuring, constraints, prd, trd, schema, design, appflow,
+  rules, implementation, modules, griller, tech_stack
+
+Removed from graph:
+  tracker — demoted to tracker_tools direct calls inside orchestrator handlers
 
 Routing:
   - orchestrator reads state.next_agent to pick the next specialist.
@@ -27,7 +30,6 @@ from planner.agents.design_agent import design_agent
 from planner.agents.appflow_agent import appflow_agent
 from planner.agents.rules_agent import rules_agent
 from planner.agents.implementation_agent import implementation_agent
-from planner.agents.tracker_agent import tracker_agent
 from planner.agents.griller_agent import griller_agent
 from planner.agents.tech_stack_agent import tech_stack_agent
 from planner.agents.module_planner_agent import module_planner_agent
@@ -40,6 +42,8 @@ def _route_from_orchestrator(state: PlannerState) -> str:
     """Orchestrator decides which specialist to invoke next (or END)."""
     if state.status == "done":
         return END
+    if state.status == "needs_review":
+        return END  # Pause for user review/approval
     agent = state.next_agent
     if agent in _VALID_NODES:
         return agent
@@ -77,16 +81,17 @@ def _route_from_tech_stack(state: PlannerState) -> str:
 # Graph builder
 # --------------------------------------------------------------------------- #
 
+# Valid nodes in the graph (tracker removed — demoted to tool calls)
 _VALID_NODES = {
     "orchestrator", "structuring", "constraints", "prd", "trd", "schema",
-    "design", "appflow", "rules", "implementation", "tracker",
+    "design", "appflow", "rules", "implementation",
     "modules", "griller", "tech_stack",
 }
 
-# Map state.next_agent value → graph node name (they match already, but explicit is safer)
+# Specialist nodes that route back through orchestrator or to griller
 _SPECIALIST_NODES = {
     "structuring", "constraints", "prd", "trd", "schema",
-    "design", "appflow", "rules", "implementation", "tracker", "modules",
+    "design", "appflow", "rules", "implementation", "modules",
 }
 
 
@@ -113,6 +118,8 @@ def build_graph() -> StateGraph:
     g = StateGraph(dict)  # LangGraph uses plain dict nodes
 
     # Register all nodes (wrapped for Pydantic ↔ dict conversion)
+    # NOTE: tracker node is REMOVED — tracker updates are now direct
+    #       tracker_tools calls inside orchestrator command handlers
     g.add_node("orchestrator",    _wrap(orchestrator))
     g.add_node("structuring",     _wrap(structuring_agent))
     g.add_node("constraints",     _wrap(constraints_agent))
@@ -123,7 +130,6 @@ def build_graph() -> StateGraph:
     g.add_node("appflow",         _wrap(appflow_agent))
     g.add_node("rules",           _wrap(rules_agent))
     g.add_node("implementation",  _wrap(implementation_agent))
-    g.add_node("tracker",         _wrap(tracker_agent))
     g.add_node("modules",         _wrap(module_planner_agent))
     g.add_node("griller",         _wrap(griller_agent))
     g.add_node("tech_stack",      _wrap(tech_stack_agent))
