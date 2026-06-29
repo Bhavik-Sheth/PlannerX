@@ -337,9 +337,15 @@ class ExecutiveAgent:
 
         elif ptype == "update_complete":
             files_changed = payload.get("files_changed", [])
+            stale_warning = payload.get("stale_warning", "")
+            lines = []
             if files_changed:
-                return f"✅ Update applied. Files changed: {', '.join(files_changed)}"
-            return "✅ Update completed."
+                lines.append(f"✅ Update applied. Files changed: {', '.join(files_changed)}")
+            else:
+                lines.append("✅ Update completed.")
+            if stale_warning:
+                lines.append(f"\n⚠️  {stale_warning}")
+            return "\n".join(lines)
 
         elif ptype == "module_list":
             modules = payload.get("modules", [])
@@ -402,6 +408,10 @@ class ExecutiveAgent:
             if parsed.get("_error"):
                 return None, parsed["_error"]
             if parsed.get("_abort"):
+                if self.state.active_update_plan:
+                    abort_cmd = {"command": "abort_update"}
+                    payload = self.orchestrator.dispatch(abort_cmd)
+                    return abort_cmd, self.render_payload(payload)
                 self.exec_state["waiting_for"] = ""
                 self.exec_state["pending_command"] = {}
                 return None, "No active prompt to abort."

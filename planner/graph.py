@@ -110,8 +110,34 @@ def build_graph() -> StateGraph:
         """Wrap a PlannerState → PlannerState agent function to dict → dict for LangGraph."""
         def wrapped(state_dict: dict) -> dict:
             state = PlannerState(**state_dict)
-            result = fn(state)
-            return result.model_dump()
+            try:
+                result = fn(state)
+                return result.model_dump()
+            except Exception as exc:
+                from pathlib import Path
+                from planner.tools.tracker_tools import update_file_status, add_blocker
+                project_root = str(Path(state.project_path).parent)
+                filename = state.current_file or "unknown"
+                agent_name = fn.__name__
+                try:
+                    update_file_status(
+                        project_root,
+                        filename,
+                        "❌ Blocked",
+                        agent_name,
+                        notes=str(exc)
+                    )
+                    add_blocker(
+                        project_root,
+                        f"Agent {agent_name} failed: {exc}",
+                        unblocked_by="re-run /run"
+                    )
+                except Exception:
+                    pass
+                state.status = "error"
+                state.error_message = str(exc)
+                save_state(state)
+                raise exc
         wrapped.__name__ = fn.__name__
         return wrapped
 

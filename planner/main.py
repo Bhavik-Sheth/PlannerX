@@ -86,12 +86,7 @@ def describe_cmd(text: str = typer.Argument(..., help="Your project idea text.")
     if planning_underway:
         typer.echo("⏳  Planning is already underway. Routing to Updates Agent...")
         try:
-            from planner.state import load_state
-            from planner.agents.updates_agent import UpdatesAgent
-            state = load_state(str(planner_dir))
-            agent = UpdatesAgent(state)
-            agent.run(change_description=text, triggered_by="orchestrator")
-            typer.echo("✅  Updates completed.")
+            _run_update_loop(planner_dir, text)
             return
         except Exception as e:
             typer.echo(f"[ERROR] Updates failed: {e}", err=True)
@@ -116,6 +111,78 @@ def describe_cmd(text: str = typer.Argument(..., help="Your project idea text.")
 # ─────────────────────────────────────────────
 # update
 # ─────────────────────────────────────────────
+
+def _run_update_loop(planner_dir: Path, text: str) -> None:
+    from planner.state import load_state
+    from planner.agents.orchestrator import OrchestratorAgent
+    
+    state = load_state(str(planner_dir))
+    orchestrator = OrchestratorAgent(state)
+    
+    # 1. Dispatch update analysis
+    payload = orchestrator.handle_update(text)
+    if payload.get("type") == "error":
+        typer.echo(f"\n[INFO] {payload.get('message')}")
+        return
+        
+    # Reload state in case it changed
+    state = load_state(str(planner_dir))
+    orchestrator = OrchestratorAgent(state)
+    
+    # 2. Run execution loop if we have an active update plan
+    while state.active_update_plan:
+        run_payload = orchestrator.handle_run()
+        
+        if run_payload.get("type") == "file_complete":
+            file = run_payload.get("file")
+            summary = run_payload.get("summary", [])
+            typer.echo(f"\n✅  {file} updated.")
+            typer.echo("\nChanges made:")
+            for bullet in summary:
+                typer.echo(f"  • {bullet}")
+                
+            # Prompt user for approval or revision
+            while True:
+                try:
+                    user_input = input(f"\nType /approve {file} to accept, or describe further changes:\n  ▶  ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    typer.echo("\n[INTERRUPTED] Update aborted.")
+                    orchestrator.handle_abort_update()
+                    raise typer.Exit(1)
+                    
+                if user_input.startswith("/approve") or user_input.lower() in ("approve", "yes", "y"):
+                    approve_payload = orchestrator.handle_approve(file)
+                    break
+                else:
+                    typer.echo(f"🔄  Re-running {file} with feedback: {user_input}")
+                    revise_payload = orchestrator.handle_revise(file, user_input)
+                    if revise_payload.get("type") == "file_complete":
+                        file = revise_payload.get("file")
+                        summary = revise_payload.get("summary", [])
+                        typer.echo(f"\n✅  {file} updated with feedback.")
+                        typer.echo("\nChanges made:")
+                        for bullet in summary:
+                            typer.echo(f"  • {bullet}")
+        elif run_payload.get("type") == "update_complete":
+            files_changed = run_payload.get("files_changed", [])
+            stale_warning = run_payload.get("stale_warning", "")
+            if files_changed:
+                typer.echo(f"\n✅  Update applied. Files changed: {', '.join(files_changed)}")
+            else:
+                typer.echo("\n✅  Update completed.")
+            if stale_warning:
+                typer.echo(f"⚠️  {stale_warning}")
+            break
+        elif run_payload.get("type") == "error":
+            typer.echo(f"\n[ERROR] Update failed: {run_payload.get('message')}", err=True)
+            raise typer.Exit(1)
+        else:
+            break
+            
+        # Reload state in loop
+        state = load_state(str(planner_dir))
+        orchestrator = OrchestratorAgent(state)
+
 
 @app.command(name="update")
 def update_cmd(
@@ -144,11 +211,7 @@ def update_cmd(
             raise typer.Exit(1)
 
     try:
-        from planner.state import load_state
-        from planner.agents.updates_agent import UpdatesAgent
-        state = load_state(str(planner_dir))
-        agent = UpdatesAgent(state)
-        agent.run(change_description=text, triggered_by="user_command")
+        _run_update_loop(planner_dir, text)
     except KeyboardInterrupt:
         typer.echo("\n[INTERRUPTED] Update aborted by user.")
         raise typer.Exit(1)
@@ -218,27 +281,10 @@ def approve_cmd(file: str = typer.Argument(..., help="Filename to approve, e.g. 
         typer.echo(f"[ERROR] {file} not found in PLANNER/.", err=True)
         raise typer.Exit(1)
 
-    # Re-run tracker_agent with the file in approved_files
-    from planner.state import PlannerState
-    from planner.agents.tracker_agent import tracker_agent
-    state = PlannerState(project_path=str(planner_dir))
-
-    # Load existing approved_files from Tracker.md (simple keyword search)
-    tracker_path = planner_dir / "Tracker.md"
-    approved: list[str] = []
-    if tracker_path.exists():
-        for line in tracker_path.read_text(encoding="utf-8").splitlines():
-            if "✅" in line and ".md" in line:
-                # Extract filename from table row: | PRD.md | ... | ✅ |
-                parts = [p.strip() for p in line.split("|") if p.strip()]
-                if parts and parts[-1] == "✅":
-                    approved.append(parts[0])
-
-    if file not in approved:
-        approved.append(file)
-
-    state.approved_files = approved
-    tracker_agent(state)
+    # Call update_file_status directly
+    from planner.tools import update_file_status
+    project_root = str(planner_dir.parent)
+    update_file_status(project_root, file, "✅ Approved", "user")
     typer.echo(f"✅  {file} marked as approved.")
 
 

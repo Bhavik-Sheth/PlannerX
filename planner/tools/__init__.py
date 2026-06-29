@@ -47,6 +47,7 @@ from .tracker_tools import (
     append_change_log,
     get_next_pending_file,
     get_status_summary,
+    initialize_tracker,
 )
 
 from .ascii_tools import (

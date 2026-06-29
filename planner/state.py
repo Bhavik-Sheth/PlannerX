@@ -106,6 +106,11 @@ class PlannerState(BaseModel):
         default_factory=dict,
         description="Current target file's change context during updates.",
     )
+    active_update_plan: Optional[Dict[str, Any]] = Field(
+        None,
+        description="The currently active UpdatePlan, if any.",
+    )
+
 
 
 def load_state(project_path: str) -> PlannerState:

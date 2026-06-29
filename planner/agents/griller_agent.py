@@ -21,6 +21,19 @@ def griller_agent(state: PlannerState) -> PlannerState:
         state.next_agent = state.calling_agent or "orchestrator"
         return state
 
+    from pathlib import Path
+    from planner.tools.tracker_tools import update_file_status
+    project_root = str(Path(state.project_path).parent)
+    
+    # Mark file as Blocked/Awaiting user input
+    update_file_status(
+        project_root,
+        state.current_file,
+        "❌ Blocked",
+        "griller_agent",
+        notes="Awaiting user input"
+    )
+
     print("\n" + "=" * 60)
     print("🔍  PLANNER NEEDS MORE INFORMATION")
     print("=" * 60)
@@ -53,6 +66,16 @@ def griller_agent(state: PlannerState) -> PlannerState:
         state.pending_questions = []
         state.status = "drafting"
         state.next_agent = state.calling_agent or "orchestrator"
+        
+        # Resume the specialist agent in the tracker status
+        specialist_agent_name = f"{state.calling_agent}_agent" if state.calling_agent else "agent"
+        update_file_status(
+            project_root,
+            state.current_file,
+            "🔄 In Progress",
+            specialist_agent_name,
+            notes="Resumed specialist agent."
+        )
 
     print("\n✅  All questions answered. Resuming...\n")
     return state

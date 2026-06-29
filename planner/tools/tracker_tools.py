@@ -10,7 +10,6 @@ from planner.tools.exceptions import InvalidStatusError
 from planner.tools.file_tools import read_file, write_file
 
 TRACKED_FILES = [
-    ("RawIdea.md",           "user input"),
     ("StructuredIdea.md",    "structuring_agent"),
     ("Constraints.md",       "constraints_agent"),
     ("PRD.md",               "prd_agent"),
@@ -20,6 +19,7 @@ TRACKED_FILES = [
     ("AppFlow.md",           "appflow_agent"),
     ("Rules.md",             "rules_agent"),
     ("ImplementationPlan.md","implementation_agent"),
+    ("MODULES/",             "module_planner_agent"),
 ]
 
 def read_tracker(project_path: str) -> dict:
@@ -33,8 +33,8 @@ def read_tracker(project_path: str) -> dict:
     # Default structure
     data = {
         "files": {
-            filename: {"status": "⏳ Pending", "agent": owner, "notes": ""}
-            for filename, owner in TRACKED_FILES
+            filename: {"status": "⏳ Pending", "agent": "—", "updated": "—", "notes": "—"}
+            for filename, _ in TRACKED_FILES
         },
         "modules": {},
         "blockers": [],
@@ -54,13 +54,13 @@ def read_tracker(project_path: str) -> dict:
             continue
             
         # Identify sections
-        if stripped.startswith("## Planning Files"):
+        if stripped.startswith("## Planning Files") or stripped.startswith("## Status"):
             current_section = "files"
             continue
         elif stripped.startswith("## Modules"):
             current_section = "modules"
             continue
-        elif stripped.startswith("## Blockers / Notes"):
+        elif stripped.startswith("## Blockers / Notes") or stripped.startswith("## Blockers"):
             current_section = "blockers"
             continue
         elif stripped.startswith("## Change Log"):
@@ -78,10 +78,12 @@ def read_tracker(project_path: str) -> dict:
                     filename = parts[0]
                     status = parts[1]
                     agent = parts[2] if len(parts) > 2 else ""
-                    notes = parts[3] if len(parts) > 3 else ""
+                    updated = parts[3] if len(parts) > 3 else ""
+                    notes = parts[4] if len(parts) > 4 else ""
                     data["files"][filename] = {
                         "status": status,
                         "agent": agent,
+                        "updated": updated,
                         "notes": notes
                     }
         elif current_section == "modules":
@@ -110,45 +112,30 @@ def _save_tracker(project_path: str, data: dict) -> bool:
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     
     rows = []
-    rows.append("# Planner Tracker\n")
-    rows.append(f"_Last updated: {now}_\n")
+    rows.append("# Tracker.md")
+    rows.append(f"Last updated: {now}\n")
     
-    # 1. Planning Files
-    rows.append("## Planning Files\n")
-    rows.append("| File | Status | Agent | Notes |")
-    rows.append("|------|--------|-------|-------|")
+    # 1. Status table
+    rows.append("## Status\n")
+    rows.append("| File | Status | Agent | Updated | Notes |")
+    rows.append("|---|---|---|---|---|")
     
     # Maintain file ordering of TRACKED_FILES
     for filename, _ in TRACKED_FILES:
-        file_info = data["files"].get(filename, {"status": "⏳ Pending", "agent": "unknown", "notes": ""})
-        status = file_info["status"]
-        agent = file_info["agent"]
-        notes = file_info["notes"]
-        rows.append(f"| {filename} | {status} | {agent} | {notes} |")
+        file_info = data["files"].get(filename, {"status": "⏳ Pending", "agent": "—", "updated": "—", "notes": "—"})
+        status = file_info.get("status", "⏳ Pending")
+        agent = file_info.get("agent", "—")
+        updated = file_info.get("updated", "—")
+        notes = file_info.get("notes", "—")
+        rows.append(f"| {filename} | {status} | {agent} | {updated} | {notes} |")
         
-    # 2. Modules
-    # Sync with actual MODULES/ files on disk if they exist, to ensure correctness
-    modules_dir = Path(project_path) / "PLANNER" / "MODULES"
-    module_files = sorted(modules_dir.glob("*.md")) if modules_dir.exists() else []
-    
-    rows.append("\n## Modules\n")
-    if module_files:
-        rows.append("| Module | Status |")
-        rows.append("|--------|--------|")
-        for mf in module_files:
-            non_empty = mf.stat().st_size > 0
-            status = "✅ Done" if non_empty else "⬜ Empty"
-            rows.append(f"| {mf.name} | {status} |")
-    else:
-        rows.append("_No modules defined yet. Use `planner module add <name>`._")
-        
-    # 3. Blockers / Notes
-    rows.append("\n## Blockers / Notes\n")
+    # 2. Blockers
+    rows.append("\n## Blockers\n")
     all_blockers = data.get("blockers", [])
     resolved = data.get("resolved_blockers", [])
     
     if not all_blockers and not resolved:
-        rows.append("_None recorded. Add blockers here manually if needed._\n")
+        rows.append("(none)\n")
     else:
         if all_blockers:
             for blocker in all_blockers:
@@ -157,15 +144,34 @@ def _save_tracker(project_path: str, data: dict) -> bool:
             rows.append("\n### Resolved Blockers:")
             for blocker in resolved:
                 rows.append(f"- {blocker}")
-                
-    # 4. Change Log
+                 
+    # 3. Change Log
+    rows.append("\n## Change Log\n")
     if data.get("change_log"):
-        rows.append("\n## Change Log\n")
         for entry in data["change_log"]:
             rows.append(f"- {entry}")
+    else:
+        rows.append("(none)")
             
     content = "\n".join(rows)
     return write_file(tracker_path, content, overwrite=True)
+
+def initialize_tracker(project_path: str, file_sequence: list[str]) -> bool:
+    """
+    Writes the initial Tracker.md with all sequence files set to ⏳ Pending.
+    Called once on /init. Overwrites any existing Tracker.md.
+    """
+    data = {
+        "files": {
+            filename: {"status": "⏳ Pending", "agent": "—", "updated": "—", "notes": "—"}
+            for filename in file_sequence
+        },
+        "modules": {},
+        "blockers": [],
+        "resolved_blockers": [],
+        "change_log": []
+    }
+    return _save_tracker(project_path, data)
 
 def update_file_status(project_path: str, filename: str, status: str, agent: str, notes: str = "") -> bool:
     """
@@ -194,9 +200,12 @@ def update_file_status(project_path: str, filename: str, status: str, agent: str
             notes = "Approved by user."
             
     data = read_tracker(project_path)
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    
     data["files"][filename] = {
         "status": status,
         "agent": agent,
+        "updated": now_str,
         "notes": notes
     }
     
@@ -257,11 +266,11 @@ def get_status_summary(project_path: str) -> str:
     data = read_tracker(project_path)
     
     rows = []
-    rows.append("| File | Status | Agent | Notes |")
-    rows.append("|------|--------|-------|-------|")
+    rows.append("| File | Status | Agent | Updated | Notes |")
+    rows.append("|---|---|---|---|---|")
     
     for filename, _ in TRACKED_FILES:
-        file_info = data["files"].get(filename, {"status": "⏳ Pending", "agent": "unknown", "notes": ""})
-        rows.append(f"| {filename} | {file_info['status']} | {file_info['agent']} | {file_info['notes']} |")
+        file_info = data["files"].get(filename, {"status": "⏳ Pending", "agent": "—", "updated": "—", "notes": "—"})
+        rows.append(f"| {filename} | {file_info.get('status', '⏳ Pending')} | {file_info.get('agent', '—')} | {file_info.get('updated', '—')} | {file_info.get('notes', '—')} |")
         
     return "\n".join(rows)
