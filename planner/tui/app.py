@@ -20,6 +20,7 @@ from planner.tui.widgets.architecture_panel import ArchitecturePanel
 from planner.tui.widgets.chat_input import ChatInput
 from planner.tui.widgets.file_tree import PlannerFileTree
 from planner.tui.widgets.viewer_panel import ViewerPanel
+from planner.tui.widgets.autocomplete import AutocompleteList
 
 
 from planner.utils import resolve_relative_path, resolve_agent
@@ -69,6 +70,7 @@ class PlannerApp(App):
             with Vertical(id="right-pane"):
                 yield ArchitecturePanel(self.planner_path, id="architecture-panel")
                 yield ViewerPanel(id="viewer-panel")
+                yield AutocompleteList(id="autocomplete-list")
                 yield ChatInput(id="chat-input", placeholder="Type /command or chat message...")
 
     def on_mount(self) -> None:
@@ -231,6 +233,18 @@ class PlannerApp(App):
         self.current_selected_file = event.path
         viewer = self.query_one("#viewer-panel")
         viewer.show_file(event.path)
+
+    def on_option_list_option_selected(self, event) -> None:
+        """Handle clicks/selection on autocomplete options."""
+        try:
+            autocomplete = self.query_one("#autocomplete-list")
+        except Exception:
+            return
+
+        if autocomplete and autocomplete.styles.display == "block":
+            chat_input = self.query_one("#chat-input")
+            chat_input.complete_option(autocomplete, event.option.id)
+            chat_input.focus()
 
     def on_chat_input_command_submitted(self, event: ChatInput.CommandSubmitted) -> None:
         """Process chat input submissions via ExecutiveAgent."""

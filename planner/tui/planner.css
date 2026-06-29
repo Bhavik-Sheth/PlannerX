@@ -71,3 +71,12 @@ Horizontal {
 #chat-input:focus {
     border: double #f0883e;
 }
+
+#autocomplete-list {
+    display: none;
+    height: 8;
+    border: solid #f0883e;
+    border-title-align: left;
+    background: #090d13;
+    color: #c9d1d9;
+}
