@@ -52,6 +52,11 @@ else
     echo "ℹ️ .env file already exists, skipping."
 fi
 
+# Scaffold the PLANBOARD directory with empty files
+echo "⚙️ Scaffolding fresh PLANBOARD directory structure..."
+./.venv/bin/python -c "from planboard.tools.file_tools import scaffold_planboard; scaffold_planboard('.')"
+
+
 echo "=================================================="
 echo "🎉 PlanBoard setup complete!"
 echo "To launch the interactive TUI, run:"

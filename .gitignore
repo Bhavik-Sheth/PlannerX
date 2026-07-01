@@ -34,7 +34,9 @@ Thumbs.db
 .directory
 
 # Project-specific files to ignore
-PLANBOARD/
+PLANBOARD/**
+!PLANBOARD/**/
+!PLANBOARD/**/*.gitkeep
 Plan_Board.md
 Stage wise build plan.md
 scripts/

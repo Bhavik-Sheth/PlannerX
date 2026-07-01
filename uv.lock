@@ -985,7 +985,7 @@ wheels = [
 ]
 
 [[package]]
-name = "plannerx"
+name = "planboard"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
